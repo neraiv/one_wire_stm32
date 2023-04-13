@@ -11,4 +11,4 @@ owInit_Timer(TIM_HandleTypeDef *htimx,uint8_t CLOCK_LINE,GPIO_TypeDef* GPIOx, ui
 ```
 Thats it u can use the library funcitions now.
 # Notes
-Libabry has a type DeviceAddress. It can be useful to store mulitple ROM address in one array.
+Libabry has a type DeviceAddress. It can be useful to store mulitple ROM address in one array. There is an example in ds18xx library example (https://github.com/neraiv/ds18bxx_stm32).
