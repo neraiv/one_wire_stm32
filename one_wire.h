@@ -8,7 +8,22 @@
 #ifndef INC_ONE_WIRE_H_
 #define INC_ONE_WIRE_H_
 
-#include "main.h"
+#ifndef __STM32F4xx_HAL_H
+#include "stm32f4xx_hal.h"
+#endif
+
+#define DEFAULT_DELAY 0
+#define USER_DEFINED_DELAY 1
+// Change if u will pass ur own delay function.
+#define DELAY_FUNCTION_TYPE DEFAULT_DELAY
+
+typedef struct {
+	uint16_t pin;
+	GPIO_TypeDef* port;
+	uint8_t lastDiscrepancy;
+	uint8_t lastFamilyDiscrepancy;
+	uint8_t lastDeviceFlag;
+}OneWire_t;
 
 typedef unsigned char DeviceAddress[8];
 
@@ -22,23 +37,20 @@ typedef unsigned char DeviceAddress[8];
 #define NORMAL_SEARCH      0xF0
 #define CONDITIONAL_SEARCH 0xEC
 
+
+typedef void (*DelayFunc)(uint32_t);
+extern DelayFunc owDelayMicroSecs_func;
+
+#if (DELAY_FUNCTION_TYPE == DEFAULT_DELAY)
+extern TIM_HandleTypeDef owHtim;
+void owDefaultDelayMicroSecs(uint32_t delay);
+#endif
+
 //
-// Sets a timer to be used in delayMicroseconds function and defines GPIO pin.Also, starts
+// Sets a timer to be used in owDelayMicroSecs_func function and defines GPIO pin.Also, starts
 // given timer if its not started yet.
 //
-void one_wire_Init_Timer(TIM_HandleTypeDef *htimx,uint8_t CLOCK_LINE,GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
-
-//
-// Disables/enables other interrupts block interfere delayMicroseconds function.
-// 1 -> disable (DEFAULT)
-// 0 -> enable
-//
-void one_wire__disableInterrupts(uint8_t disable_interrupts_flag);
-
-//
-// Delay in microseconds function
-//
-void delayMicroseconds(uint32_t time);
+void one_wire_Init_Timer(TIM_HandleTypeDef *htimx, uint32_t source_clock, GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin);
 
 //
 //Set a pin as output
@@ -58,7 +70,7 @@ void Set_Pin_Input (GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin);
 // 1, if the reset was successful
 // 0, if the reset wasn't successful
 //
-uint8_t onewire_reset(void);
+uint8_t onewire_reset(OneWire_t* ow);
 
 //
 // Write 1 bit data

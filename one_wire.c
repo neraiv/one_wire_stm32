@@ -8,67 +8,45 @@
 
 #include "one_wire.h"
 
-uint16_t OW_PIN;
-GPIO_TypeDef* OW_PORT;
-TIM_HandleTypeDef htim;
-uint8_t DISABLE_INTERRUPTS_FLAG = 1;
-
-DeviceAddress ROM_NO;
-uint8_t LastDiscrepancy;
-uint8_t LastFamilyDiscrepancy;
-uint8_t LastDeviceFlag;
-
 //
-// Sets a timer to be used in delayMicroseconds function and defines GPIO pin.Also, starts
+// Sets a timer to be used in owDelayMicroSecs_func function and defines GPIO pin.Also, starts
 // given timer if its not started yet.
 //
-void one_wire_Init_Timer(TIM_HandleTypeDef *htimx,uint8_t CLOCK_LINE,GPIO_TypeDef* GPIOx, uint16_t GPIO_Pin){
-  OW_PIN = GPIO_Pin;
-  OW_PORT = GPIOx;
-  htim = *htimx;
+OneWire_t owInit(TIM_HandleTypeDef *htimx, uint32_t source_clock, GPIO_TypeDef* GPIO_Port, uint16_t GPIO_Pin){
+	OneWire_t result;
 
-  if(CLOCK_LINE == 1){
-	  htim.Init.Prescaler = HAL_RCC_GetPCLK1Freq()*2/1000000 -1;
-  }
-  else if(CLOCK_LINE == 2){
-	  htim.Init.Prescaler = HAL_RCC_GetPCLK2Freq()*2/1000000 -1;
-  }
+	result.pin = GPIO_Pin;
+	result.port = GPIO_Port;
+	result.lastDeviceFlag = 0;
+	result.lastDiscrepancy = 0;
+	result.lastFamilyDiscrepancy = 0;
 
-  HAL_TIM_Base_Init(&htim); //Yeni prescaler değerini timer a kaydet
-
-  if(htim.State != HAL_TIM_STATE_BUSY){ // Timer başlatılmamışsa, başlat
-	  HAL_TIM_Base_Start(&htim);
-  }
+	return result;
 }
 
-//
-// Disables/enables other interrupts block interfere delayMicroseconds function.
-// 1 -> disable (DEFAULT)
-// 0 -> enable
-//
-void one_wire_disableInterrupts(uint8_t disable_interrupts_flag){
-	DISABLE_INTERRUPTS_FLAG = disable_interrupts_flag;
+
+
+#if (DELAY_FUNCTION_TYPE == DEFAULT_DELAY)
+void owInitDelayFunction(){
+
 }
 
 //
 // Implements delay in microseconds.
 //
-void delayMicroseconds(uint32_t time){
+void owDefaultDelayMicroSecs(uint32_t delay){
+	__disable_irq();
 
-	if(DISABLE_INTERRUPTS_FLAG){         // Disable other interrupts RECOMENDED
-		__disable_irq();
+	owHtim.Instance->CNT = 0;
+	while(owHtim.Instance->CNT < delay);
 
-		htim.Instance->CNT = 0;
-		while(htim.Instance->CNT < time);
-
-		__enable_irq();
-	}
-	else{
-		htim.Instance->CNT = 0;
-		while(htim.Instance->CNT < time);
-	}
+	__enable_irq();
 }
-
+#else
+void owInitDelayFunction(DelayFunc* func){
+	owDelayMicroSecs_func = func;
+}
+#endif
 //
 // Set given GPIO Pin as OUTPUT
 //
@@ -99,29 +77,29 @@ void Set_Pin_Input (GPIO_TypeDef *GPIOx, uint16_t GPIO_Pin)
 // 1, if the reset was successful
 // 0, if the reset wasn't successful
 //
-uint8_t onewire_reset(void)
+uint8_t onewire_reset(OneWire_t* ow)
 {
 	uint8_t r;
 	uint8_t test;
 	uint8_t retries = 20;
 
 	do{
-	Set_Pin_Input(OW_PORT, OW_PIN); // Read the line. Line must be at HIGH value,cuz
+	Set_Pin_Input(ow->port, ow->pin); // Read the line. Line must be at HIGH value,cuz
 	do {                            // PULL-UP resistor
 		if (--retries == 0) return 0;
-		delayMicroseconds(2);
-	} while (!HAL_GPIO_ReadPin(OW_PORT, OW_PIN));
+		owDelayMicroSecs_func(2);
+	} while (!HAL_GPIO_ReadPin(ow->port, ow->pin));
 
 	// Implementation of One-Wire reset
-	Set_Pin_Output(OW_PORT, OW_PIN);    // Set the LOW for 480us
-	HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_RESET);
-	delayMicroseconds(480);
+	Set_Pin_Output(ow->port, ow->pin);    // Set the LOW for 480us
+	HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_RESET);
+	owDelayMicroSecs_func(480);
 
-	Set_Pin_Input(OW_PORT, OW_PIN);     // Wait for PULL-UP resistor to do its job
-	delayMicroseconds(70);
+	Set_Pin_Input(ow->port, ow->pin);     // Wait for PULL-UP resistor to do its job
+	owDelayMicroSecs_func(70);
 
-	r = !HAL_GPIO_ReadPin(OW_PORT, OW_PIN);
-	delayMicroseconds(410);             // Complete the reset cycle
+	r = !HAL_GPIO_ReadPin(ow->port, ow->pin);
+	owDelayMicroSecs_func(410);             // Complete the reset cycle
 	test++;
 	} while(!r && test < retries);
 	return r;
@@ -133,18 +111,18 @@ uint8_t onewire_reset(void)
 void onewire_write_bit(uint8_t v)
 {
 	if(v & 1){                    // Send 1
-		Set_Pin_Output(OW_PORT, OW_PIN);
-		HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_RESET);
-		delayMicroseconds(10);
-		HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_SET);
-		delayMicroseconds(55);
+		Set_Pin_Output(ow->port, ow->pin);
+		HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_RESET);
+		owDelayMicroSecs_func(10);
+		HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_SET);
+		owDelayMicroSecs_func(55);
 	}
 	else{                        // Send 0
-		Set_Pin_Output(OW_PORT, OW_PIN);
-		HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_RESET);
-		delayMicroseconds(65);
-		HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_SET);
-		delayMicroseconds(5);
+		Set_Pin_Output(ow->port, ow->pin);
+		HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_RESET);
+		owDelayMicroSecs_func(65);
+		HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_SET);
+		owDelayMicroSecs_func(5);
 	}
 }
 
@@ -155,13 +133,13 @@ uint8_t onewire_read_bit(void)
 {
 	uint8_t r;
 
-	Set_Pin_Output(OW_PORT, OW_PIN);
-	HAL_GPIO_WritePin(OW_PORT, OW_PIN, GPIO_PIN_RESET);
-	delayMicroseconds(3);
-	Set_Pin_Input(OW_PORT, OW_PIN);
-	delayMicroseconds(10);
-	r = HAL_GPIO_ReadPin(OW_PORT, OW_PIN);
-	delayMicroseconds(53);
+	Set_Pin_Output(ow->port, ow->pin);
+	HAL_GPIO_WritePin(ow->port, ow->pin, GPIO_PIN_RESET);
+	owDelayMicroSecs_func(3);
+	Set_Pin_Input(ow->port, ow->pin);
+	owDelayMicroSecs_func(10);
+	r = HAL_GPIO_ReadPin(ow->port, ow->pin);
+	owDelayMicroSecs_func(53);
 	return r;
 }
 
